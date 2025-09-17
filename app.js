@@ -1,13 +1,13 @@
-// Firebase Configuration (Replace with your actual config)
+// Firebase Configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyB2wW6aQS6eausCrBikACIKmsD8gn4E0g4",
-    authDomain: "rpsls-4e6db.firebaseapp.com",
-    databaseURL: "https://rpsls-4e6db-default-rtdb.firebaseio.com",
-    projectId: "rpsls-4e6db",
-    storageBucket: "rpsls-4e6db.firebasestorage.app",
-    messagingSenderId: "665715994571",
-    appId: "1:665715994571:web:52d971ca41f55e052f104e"
-  };
+  apiKey: "AIzaSyB2wW6aQS6eausCrBikACIKmsD8gn4E0g4",
+  authDomain: "rpsls-4e6db.firebaseapp.com",
+  databaseURL: "https://rpsls-4e6db-default-rtdb.firebaseio.com",
+  projectId: "rpsls-4e6db",
+  storageBucket: "rpsls-4e6db.firebasestorage.app",
+  messagingSenderId: "665715994571",
+  appId: "1:665715994571:web:52d971ca41f55e052f104e",
+};
 
 // Game Data
 const gameRules = {
@@ -26,15 +26,15 @@ const choices = [
   { id: 'spock', name: 'Spock', emoji: '🖖' }
 ];
 
-// Global Variables
-let app = null;
-let database = null;
-let firebaseAvailable = false;
-let currentRoomRef = null;
-let leaderboardRef = null;
-let gameHistoryRef = null;
-let playerId = null;
-let roomListeners = [];
+// Initialize Firebase
+let app, database;
+try {
+  app = firebase.initializeApp(firebaseConfig);
+  database = firebase.database();
+  console.log('Firebase initialized successfully');
+} catch (error) {
+  console.error('Firebase initialization failed:', error);
+}
 
 // Game State
 let gameState = {
@@ -43,313 +43,447 @@ let gameState = {
   difficulty: 'medium',
   maxGames: 3,
   currentGame: 0,
-  player1: { name: 'Player 1', score: 0, choice: null },
-  player2: { name: 'Computer', score: 0, choice: null },
+  player1: { name: 'Player 1', score: 0, choice: null, id: null },
+  player2: { name: 'Computer', score: 0, choice: null, id: null },
   gameHistory: [],
   playerHistory: [],
   currentRoomCode: null,
   isGameActive: false,
   waitingForChoice: false,
+  leaderboard: [],
   isHost: false,
-  opponentConnected: false,
-  bothPlayersReady: false,
-  leaderboard: []
+  connectionRef: null,
+  roomListeners: []
 };
 
-// Firebase Manager
-class FirebaseManager {
+// Firebase Game Manager - Real Implementation
+class FirebaseGameManager {
   constructor() {
-    this.initializeFirebase();
-  }
-
-  async initializeFirebase() {
-    try {
-      // Check if config has placeholder values
-      if (firebaseConfig.apiKey === "your-api-key-here") {
-        console.warn('Firebase config contains placeholder values. Running in local mode only.');
-        this.handleFirebaseUnavailable();
-        return;
-      }
-
-      // Initialize Firebase
-      app = firebase.initializeApp(firebaseConfig);
-      database = firebase.database();
-      
-      // Generate unique player ID
-      playerId = this.generatePlayerId();
-      
-      // Test connection
-      await this.testConnection();
-      
-      firebaseAvailable = true;
-      this.setupDatabaseReferences();
-      this.updateConnectionStatus('connected', 'Connected to Firebase');
-      this.enableOnlineFeatures();
-      
-      console.log('Firebase initialized successfully');
-      
-    } catch (error) {
-      console.error('Firebase initialization failed:', error);
-      this.handleFirebaseUnavailable();
-    }
-  }
-
-  async testConnection() {
-    try {
-      const testRef = database.ref('info/connected');
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Connection timeout'));
-        }, 5000);
-        
-        testRef.once('value', (snapshot) => {
-          clearTimeout(timeout);
-          if (snapshot.val() === true) {
-            resolve();
-          } else {
-            reject(new Error('Not connected'));
-          }
-        }, (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-      });
-    } catch (error) {
-      throw new Error('Connection test failed');
-    }
-  }
-
-  setupDatabaseReferences() {
-    leaderboardRef = database.ref('leaderboard');
-    gameHistoryRef = database.ref('gameHistory');
-    
-    // Listen for connection status changes
-    database.ref('info/connected').on('value', (snapshot) => {
-      if (snapshot.val() === true) {
-        this.updateConnectionStatus('connected', 'Connected to Firebase');
-      } else {
-        this.updateConnectionStatus('connecting', 'Reconnecting to Firebase...');
-      }
-    });
-  }
-
-  handleFirebaseUnavailable() {
-    firebaseAvailable = false;
-    this.updateConnectionStatus('error', 'Firebase not configured');
-    this.showFirebaseNotice();
-    this.disableOnlineFeatures();
-  }
-
-  updateConnectionStatus(status, text) {
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    
-    if (statusDot && statusText) {
-      statusDot.className = `status-dot ${status}`;
-      statusText.textContent = text;
-    }
-  }
-
-  showFirebaseNotice() {
-    const notice = document.getElementById('firebase-config-notice');
-    if (notice) {
-      notice.classList.remove('hidden');
-    }
-  }
-
-  enableOnlineFeatures() {
-    // Enable online mode radio button
-    const onlineOption = document.querySelector('input[value="online"]');
-    const modeStatus = document.querySelector('.mode-status');
-    
-    if (onlineOption) {
-      onlineOption.disabled = false;
-      if (modeStatus) {
-        modeStatus.textContent = 'Real-time multiplayer available';
-        modeStatus.style.color = 'var(--color-success)';
-      }
-    }
-
-    // Update online indicators
-    document.querySelectorAll('.online-indicator').forEach(indicator => {
-      indicator.classList.remove('offline');
-      const textSpan = indicator.querySelector('span:last-child');
-      if (textSpan) {
-        textSpan.textContent = 
-          indicator.id === 'join-online-indicator' ? 'Online features available' : 'Synced with Firebase';
-      }
-    });
-
-    // Hide offline notices
-    const offlineNotice = document.getElementById('firebase-offline-notice');
-    if (offlineNotice) {
-      offlineNotice.classList.add('hidden');
-    }
-  }
-
-  disableOnlineFeatures() {
-    // Disable online mode radio button
-    const onlineOption = document.querySelector('input[value="online"]');
-    const modeStatus = document.querySelector('.mode-status');
-    
-    if (onlineOption) {
-      onlineOption.disabled = true;
-      onlineOption.checked = false;
-      const localOption = document.querySelector('input[value="local"]');
-      if (localOption) {
-        localOption.checked = true;
-      }
-      if (modeStatus) {
-        modeStatus.textContent = 'Requires Firebase setup';
-        modeStatus.style.color = 'var(--color-error)';
-      }
-    }
-
-    // Update online indicators
-    document.querySelectorAll('.online-indicator').forEach(indicator => {
-      indicator.classList.add('offline');
-      const textSpan = indicator.querySelector('span:last-child');
-      const dotSpan = indicator.querySelector('.indicator-dot');
-      
-      if (textSpan) {
-        textSpan.textContent = 'Offline mode';
-      }
-      if (dotSpan) {
-        dotSpan.style.background = 'var(--color-error)';
-      }
-    });
-
-    // Show offline notice in join section
-    const offlineNotice = document.getElementById('firebase-offline-notice');
-    if (offlineNotice) {
-      offlineNotice.classList.remove('hidden');
-    }
+    this.database = database;
+    this.connectionRef = null;
+    this.presenceRef = null;
+    this.setupPresenceSystem();
   }
 
   generatePlayerId() {
-    return 'player_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    return 'player_' + Math.random().toString(36).substr(2, 9);
   }
 
-  async createRoom(hostName, gameSettings) {
-    if (!firebaseAvailable) {
-      throw new Error('Firebase not available');
+  generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let result = '';
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+    return result;
+  }
 
-    const roomCode = this.generateRoomCode();
-    const roomData = {
-      gameId: this.generateGameId(),
-      createdAt: firebase.database.ServerValue.TIMESTAMP,
-      lastActivity: firebase.database.ServerValue.TIMESTAMP,
-      maxPlayers: 2,
-      gameConfig: {
-        maxRounds: gameSettings.maxGames,
-        timeLimit: 30,
-        gameMode: 'standard'
-      },
-      players: {
-        player1: {
-          id: playerId,
-          name: hostName,
-          connected: true,
-          choice: null,
-          score: 0,
-          ready: true,
-          isHost: true
-        },
-        player2: null
-      },
-      gameState: {
-        status: 'waiting',
-        currentRound: 1,
-        roundResults: [],
-        winner: null,
-        bothPlayersChosen: false
-      }
-    };
+  setupPresenceSystem() {
+    if (!this.database) return;
 
     try {
-      await database.ref(`rooms/${roomCode}`).set(roomData);
-      currentRoomRef = database.ref(`rooms/${roomCode}`);
-      this.setupRoomListener(roomCode);
-      return roomCode;
+      const connectedRef = this.database.ref('info/connected');
+      connectedRef.on('value', (snap) => {
+        if (snap.val() === true) {
+          this.updateConnectionStatus(true);
+        } else {
+          this.updateConnectionStatus(false);
+        }
+      });
     } catch (error) {
-      console.error('Error creating room:', error);
+      console.error('Failed to setup presence system:', error);
+      this.updateConnectionStatus(false);
+    }
+  }
+
+  updateConnectionStatus(connected) {
+    const statusElement = document.getElementById('connection-status');
+    const statusSpan = statusElement?.querySelector('.status');
+    
+    if (statusSpan) {
+      if (connected) {
+        statusSpan.textContent = 'Connected';
+        statusSpan.className = 'status status--success';
+      } else {
+        statusSpan.textContent = 'Connection Lost';
+        statusSpan.className = 'status status--error';
+      }
+    }
+  }
+
+  async createRoom(gameConfig) {
+    if (!this.database) {
+      throw new Error('Firebase not initialized');
+    }
+
+    try {
+      const roomCode = this.generateRoomCode();
+      const playerId = this.generatePlayerId();
+      const roomData = {
+        gameId: roomCode + '_' + Date.now(),
+        createdAt: Date.now(),
+        maxPlayers: 2,
+        gameConfig: {
+          maxGames: gameConfig.maxGames,
+          difficulty: gameConfig.difficulty || 'medium'
+        },
+        players: {
+          [playerId]: {
+            id: playerId,
+            name: gameConfig.hostName,
+            connected: true,
+            score: 0,
+            choice: null,
+            joinedAt: Date.now(),
+            isHost: true
+          }
+        },
+        gameState: {
+          status: 'waiting',
+          currentRound: 0,
+          bothPlayersReady: false,
+          roundResults: []
+        }
+      };
+
+      await this.database.ref(`rooms/${roomCode}`).set(roomData);
+      
+      // Setup presence for host
+      const presenceRef = this.database.ref(`rooms/${roomCode}/players/${playerId}/connected`);
+      presenceRef.onDisconnect().set(false);
+      
+      // Set up room cleanup on disconnect
+      const roomRef = this.database.ref(`rooms/${roomCode}`);
+      roomRef.onDisconnect().remove();
+
+      gameState.player1.id = playerId;
+      gameState.isHost = true;
+      this.connectionRef = presenceRef;
+
+      return { roomCode, playerId };
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      throw new Error('Failed to create room: ' + error.message);
+    }
+  }
+
+  async joinRoom(roomCode, playerName) {
+    if (!this.database) {
+      throw new Error('Firebase not initialized');
+    }
+
+    try {
+      const roomSnapshot = await this.database.ref(`rooms/${roomCode}`).once('value');
+      if (!roomSnapshot.exists()) {
+        throw new Error('Room not found');
+      }
+
+      const roomData = roomSnapshot.val();
+      const playerCount = Object.keys(roomData.players || {}).length;
+      
+      if (playerCount >= 2) {
+        throw new Error('Room is full');
+      }
+
+      const playerId = this.generatePlayerId();
+      await this.database.ref(`rooms/${roomCode}/players/${playerId}`).set({
+        id: playerId,
+        name: playerName,
+        connected: true,
+        score: 0,
+        choice: null,
+        joinedAt: Date.now(),
+        isHost: false
+      });
+
+      // Setup presence for guest
+      const presenceRef = this.database.ref(`rooms/${roomCode}/players/${playerId}/connected`);
+      presenceRef.onDisconnect().set(false);
+      
+      // Clean up player on disconnect
+      const playerRef = this.database.ref(`rooms/${roomCode}/players/${playerId}`);
+      playerRef.onDisconnect().remove();
+
+      gameState.player1.id = playerId;
+      gameState.isHost = false;
+      this.connectionRef = presenceRef;
+
+      return { playerId, hostName: Object.values(roomData.players)[0].name };
+    } catch (error) {
+      console.error('Failed to join room:', error);
       throw error;
     }
   }
 
-  generateRoomCode() {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
-  }
+  async submitChoice(roomCode, playerId, choice) {
+    if (!this.database) {
+      throw new Error('Firebase not initialized');
+    }
 
-  generateGameId() {
-    return 'game_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-  }
-
-  setupRoomListener(roomCode) {
-    // Implementation for room listening would go here
-    console.log('Room listener setup for:', roomCode);
-  }
-
-  cleanupRoomListeners() {
-    roomListeners.forEach(({ ref, listener }) => {
-      if (ref && typeof ref.off === 'function') {
-        ref.off('value', listener);
+    try {
+      await this.database.ref(`rooms/${roomCode}/players/${playerId}/choice`).set(choice);
+      
+      // Check if both players have made choices
+      const roomSnapshot = await this.database.ref(`rooms/${roomCode}`).once('value');
+      const roomData = roomSnapshot.val();
+      const players = Object.values(roomData.players || {});
+      
+      if (players.length === 2 && players.every(p => p.choice !== null)) {
+        await this.database.ref(`rooms/${roomCode}/gameState/bothPlayersReady`).set(true);
       }
-    });
-    roomListeners = [];
-  }
-
-  async leaveRoom() {
-    if (currentRoomRef) {
-      this.cleanupRoomListeners();
-      currentRoomRef = null;
+    } catch (error) {
+      console.error('Failed to submit choice:', error);
+      throw new Error('Failed to submit choice: ' + error.message);
     }
   }
 
-  async updateLeaderboard(playerName, gameResult) {
-    if (!firebaseAvailable || !leaderboardRef) return;
-    console.log('Updating leaderboard for:', playerName, gameResult);
+  async updateGameState(roomCode, updates) {
+    if (!this.database) {
+      throw new Error('Firebase not initialized');
+    }
+
+    try {
+      await this.database.ref(`rooms/${roomCode}/gameState`).update(updates);
+    } catch (error) {
+      console.error('Failed to update game state:', error);
+      throw new Error('Failed to update game state: ' + error.message);
+    }
+  }
+
+  async updatePlayerScore(roomCode, playerId, score) {
+    if (!this.database) {
+      throw new Error('Firebase not initialized');
+    }
+
+    try {
+      await this.database.ref(`rooms/${roomCode}/players/${playerId}/score`).set(score);
+    } catch (error) {
+      console.error('Failed to update score:', error);
+      throw new Error('Failed to update score: ' + error.message);
+    }
+  }
+
+  setupRealTimeListeners(roomCode, playerId) {
+    if (!this.database) return;
+
+    try {
+      // Listen for room changes
+      const roomRef = this.database.ref(`rooms/${roomCode}`);
+      const roomListener = roomRef.on('value', (snapshot) => {
+        if (!snapshot.exists()) {
+          this.handleRoomRemoved();
+          return;
+        }
+
+        const roomData = snapshot.val();
+        this.handleRoomUpdate(roomData, playerId);
+      });
+
+      gameState.roomListeners.push({ ref: roomRef, listener: roomListener });
+
+      // Listen for player connections
+      const playersRef = this.database.ref(`rooms/${roomCode}/players`);
+      const playersListener = playersRef.on('value', (snapshot) => {
+        const players = snapshot.val() || {};
+        this.handlePlayersUpdate(players, playerId);
+      });
+
+      gameState.roomListeners.push({ ref: playersRef, listener: playersListener });
+
+      // Listen for game state changes
+      const gameStateRef = this.database.ref(`rooms/${roomCode}/gameState`);
+      const gameStateListener = gameStateRef.on('value', (snapshot) => {
+        const gameStateData = snapshot.val() || {};
+        this.handleGameStateUpdate(gameStateData);
+      });
+
+      gameState.roomListeners.push({ ref: gameStateRef, listener: gameStateListener });
+
+    } catch (error) {
+      console.error('Failed to setup listeners:', error);
+    }
+  }
+
+  handleRoomUpdate(roomData, currentPlayerId) {
+    const players = Object.values(roomData.players || {});
+    
+    if (players.length === 2) {
+      const currentPlayer = players.find(p => p.id === currentPlayerId);
+      const opponent = players.find(p => p.id !== currentPlayerId);
+      
+      if (currentPlayer && opponent) {
+        // Update UI with current game state
+        gameState.player1.name = currentPlayer.name;
+        gameState.player1.score = currentPlayer.score;
+        gameState.player2.name = opponent.name;
+        gameState.player2.score = opponent.score;
+        
+        if (window.gameEngine) {
+          window.gameEngine.updateGameUI();
+        }
+
+        // Check if both players have made choices
+        if (currentPlayer.choice && opponent.choice && roomData.gameState.bothPlayersReady) {
+          this.handleBothChoicesMade(currentPlayer, opponent);
+        }
+
+        // Check opponent connection
+        this.handleOpponentConnection(opponent.connected);
+      }
+    }
+  }
+
+  handlePlayersUpdate(players, currentPlayerId) {
+    const playerCount = Object.keys(players).length;
+    
+    if (playerCount === 2) {
+      const roomStatus = document.getElementById('room-status');
+      if (roomStatus) {
+        roomStatus.textContent = 'Player joined! Starting game...';
+        roomStatus.className = 'status status--success';
+        
+        setTimeout(() => {
+          if (window.gameEngine) {
+            window.gameEngine.initializeOnlineGame();
+            window.navigationManager.navigateTo('game-play');
+          }
+        }, 2000);
+      }
+    } else if (playerCount === 1) {
+      const roomStatus = document.getElementById('room-status');
+      if (roomStatus) {
+        roomStatus.textContent = 'Waiting for player to join...';
+        roomStatus.className = 'status status--info';
+      }
+    }
+  }
+
+  handleGameStateUpdate(gameStateData) {
+    if (gameStateData.status === 'finished') {
+      setTimeout(() => {
+        if (window.gameEngine) {
+          window.gameEngine.endGame();
+        }
+      }, 1000);
+    }
+  }
+
+  handleBothChoicesMade(currentPlayer, opponent) {
+    gameState.player1.choice = currentPlayer.choice;
+    gameState.player2.choice = opponent.choice;
+    
+    setTimeout(() => {
+      if (window.gameEngine) {
+        window.gameEngine.resolveOnlineRound();
+      }
+    }, 1000);
+  }
+
+  handleOpponentConnection(connected) {
+    const statusElement = document.getElementById('connection-status');
+    const statusSpan = statusElement?.querySelector('.status');
+    
+    if (statusSpan && gameState.gameMode === 'online') {
+      if (!connected) {
+        statusSpan.textContent = 'Opponent Disconnected';
+        statusSpan.className = 'status status--warning';
+      } else {
+        statusSpan.textContent = 'Connected';
+        statusSpan.className = 'status status--success';
+      }
+    }
+  }
+
+  handleRoomRemoved() {
+    if (gameState.gameMode === 'online' && gameState.isGameActive) {
+      alert('Game room was closed. Returning to main menu.');
+      if (window.gameEngine) {
+        window.gameEngine.quitGame();
+      }
+    }
+  }
+
+  async handlePlayerDisconnection(roomCode, playerId) {
+    if (!this.database) return;
+
+    try {
+      // Remove player from room
+      await this.database.ref(`rooms/${roomCode}/players/${playerId}`).remove();
+      
+      // Check if room is empty and clean up
+      const roomSnapshot = await this.database.ref(`rooms/${roomCode}`).once('value');
+      if (roomSnapshot.exists()) {
+        const roomData = roomSnapshot.val();
+        const playerCount = Object.keys(roomData.players || {}).length;
+        
+        if (playerCount === 0) {
+          await this.database.ref(`rooms/${roomCode}`).remove();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to handle player disconnection:', error);
+    }
+  }
+
+  async saveToLeaderboard(playerData) {
+    if (!this.database) return;
+
+    try {
+      const leaderboardRef = this.database.ref(`leaderboard/${playerData.id}`);
+      const snapshot = await leaderboardRef.once('value');
+      
+      let existingData = snapshot.val() || {
+        name: playerData.name,
+        totalGames: 0,
+        totalWins: 0,
+        totalLosses: 0,
+        totalTies: 0,
+        winStreak: 0,
+        maxWinStreak: 0
+      };
+
+      existingData.totalGames += playerData.totalGames;
+      existingData.totalWins += playerData.totalWins;
+      existingData.totalLosses += playerData.totalLosses;
+      existingData.totalTies += playerData.totalTies;
+
+      if (playerData.won) {
+        existingData.winStreak++;
+        existingData.maxWinStreak = Math.max(existingData.maxWinStreak, existingData.winStreak);
+      } else if (playerData.lost) {
+        existingData.winStreak = 0;
+      }
+
+      await leaderboardRef.set(existingData);
+    } catch (error) {
+      console.error('Failed to save to leaderboard:', error);
+    }
   }
 
   async loadLeaderboard() {
-    if (!firebaseAvailable || !leaderboardRef) {
+    if (!this.database) return [];
+
+    try {
+      const snapshot = await this.database.ref('leaderboard').once('value');
+      const data = snapshot.val() || {};
+      return Object.values(data);
+    } catch (error) {
+      console.error('Failed to load leaderboard:', error);
       return [];
     }
-    return [];
   }
-}
 
-// Utility Functions
-function navigateToSection(sectionId) {
-  console.log('Navigating to section:', sectionId);
-  
-  // Hide all sections
-  document.querySelectorAll('.section').forEach(section => {
-    section.classList.remove('active');
-  });
+  cleanup() {
+    // Remove all listeners
+    gameState.roomListeners.forEach(({ ref, listener }) => {
+      ref.off('value', listener);
+    });
+    gameState.roomListeners = [];
 
-  // Show target section
-  const targetSection = document.getElementById(sectionId);
-  if (targetSection) {
-    targetSection.classList.add('active');
-    gameState.currentSection = sectionId;
-    updateNavigation();
-    
-    // Load leaderboard if navigating to leaderboard section
-    if (sectionId === 'leaderboard' && leaderboardManager) {
-      leaderboardManager.loadLeaderboard();
-    }
-  }
-}
-
-function updateNavigation() {
-  const navBtn = document.getElementById('main-nav')?.querySelector('.nav-btn');
-  if (navBtn) {
-    if (gameState.currentSection === 'main-menu') {
-      navBtn.classList.remove('show');
-    } else {
-      navBtn.classList.add('show');
+    // Remove presence
+    if (this.connectionRef) {
+      this.connectionRef.off();
+      this.connectionRef = null;
     }
   }
 }
@@ -361,135 +495,136 @@ class NavigationManager {
   }
 
   init() {
-    this.setupNavigationEvents();
-    this.updateNavigation();
+    // Wait for DOM to be ready
+    setTimeout(() => {
+      this.setupEventListeners();
+      this.updateNavigation();
+    }, 100);
   }
 
-  setupNavigationEvents() {
-    // Handle menu card clicks with more specific targeting
-    const menuCards = document.querySelectorAll('.menu-card[data-section]');
-    menuCards.forEach(card => {
-      card.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const section = card.getAttribute('data-section');
-        console.log('Menu card clicked:', section);
-        this.navigateTo(section);
-      });
-    });
-
-    // Handle navigation button clicks
-    const navButtons = document.querySelectorAll('.nav-btn[data-section]');
-    navButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const section = btn.getAttribute('data-section');
-        console.log('Nav button clicked:', section);
-        this.navigateTo(section);
-      });
-    });
-
-    // Handle other navigation elements
-    const otherNavElements = document.querySelectorAll('button[data-section]:not(.menu-card):not(.nav-btn)');
-    otherNavElements.forEach(element => {
+  setupEventListeners() {
+    document.querySelectorAll('[data-section]').forEach(element => {
       element.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const section = element.getAttribute('data-section');
-        console.log('Other nav element clicked:', section);
+        const section = e.currentTarget.dataset.section;
+        console.log('Navigating to:', section);
         this.navigateTo(section);
       });
     });
   }
 
   navigateTo(sectionId) {
-    navigateToSection(sectionId);
+    console.log('NavigationManager: navigating to', sectionId);
+    
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(section => {
+      section.classList.remove('active');
+    });
+
+    // Show target section
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) {
+      targetSection.classList.add('active');
+      gameState.currentSection = sectionId;
+      this.updateNavigation();
+      
+      // Hide connection status on non-game sections
+      const connectionStatus = document.getElementById('connection-status');
+      if (connectionStatus) {
+        if (sectionId !== 'game-play') {
+          connectionStatus.classList.add('hidden');
+        } else {
+          connectionStatus.classList.remove('hidden');
+        }
+      }
+    }
   }
 
   updateNavigation() {
-    updateNavigation();
+    const navBtn = document.querySelector('#main-nav .nav-btn');
+    if (navBtn) {
+      if (gameState.currentSection === 'main-menu') {
+        navBtn.classList.remove('show');
+      } else {
+        navBtn.classList.add('show');
+      }
+    }
   }
 }
 
-// Game Engine
+// Game Logic
 class GameEngine {
   constructor() {
+    this.firebaseManager = new FirebaseGameManager();
     this.initializeEventListeners();
   }
 
   initializeEventListeners() {
-    // Create game form - use more specific event handling
+    // Wait for DOM to be ready
+    setTimeout(() => {
+      this.setupAllEventListeners();
+    }, 100);
+  }
+
+  setupAllEventListeners() {
     const startGameBtn = document.getElementById('start-game');
     if (startGameBtn) {
-      startGameBtn.onclick = (e) => {
+      startGameBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        console.log('Start game button clicked');
+        console.log('Start game clicked');
         this.startGame();
-      };
+      });
     }
     
-    // Game mode radio buttons
-    const gameModeRadios = document.querySelectorAll('input[name="gameMode"]');
-    gameModeRadios.forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        console.log('Game mode changed to:', e.target.value);
-        this.handleGameModeChange(e.target.value);
+    document.querySelectorAll('input[name="gameMode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => this.handleGameModeChange(e.target.value));
+    });
+
+    const joinGameBtn = document.getElementById('join-game-btn');
+    if (joinGameBtn) {
+      joinGameBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.joinGame();
+      });
+    }
+
+    document.querySelectorAll('.choice-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.makeChoice(e.currentTarget.dataset.choice);
       });
     });
 
-    // Join game button
-    const joinGameBtn = document.getElementById('join-game-btn');
-    if (joinGameBtn) {
-      joinGameBtn.onclick = (e) => {
-        e.preventDefault();
-        console.log('Join game button clicked');
-        this.joinGame();
-      };
+    const nextRoundBtn = document.getElementById('next-round');
+    if (nextRoundBtn) {
+      nextRoundBtn.addEventListener('click', () => this.nextRound());
     }
 
-    // Choice buttons
-    const choiceButtons = document.querySelectorAll('.choice-btn');
-    choiceButtons.forEach(btn => {
-      btn.onclick = (e) => {
-        e.preventDefault();
-        const choice = btn.getAttribute('data-choice');
-        console.log('Choice button clicked:', choice);
-        this.makeChoice(choice);
-      };
-    });
+    const playAgainBtn = document.getElementById('play-again');
+    if (playAgainBtn) {
+      playAgainBtn.addEventListener('click', () => this.playAgain());
+    }
 
-    // Game control buttons
-    this.setupGameControlButtons();
+    const playAgainModalBtn = document.getElementById('play-again-modal');
+    if (playAgainModalBtn) {
+      playAgainModalBtn.addEventListener('click', () => this.playAgain());
+    }
 
-    // Copy room code
+    const quitGameBtn = document.getElementById('quit-game');
+    if (quitGameBtn) {
+      quitGameBtn.addEventListener('click', () => this.quitGame());
+    }
+
+    const mainMenuModalBtn = document.getElementById('main-menu-modal');
+    if (mainMenuModalBtn) {
+      mainMenuModalBtn.addEventListener('click', () => this.quitGame());
+    }
+
     const copyCodeBtn = document.getElementById('copy-code');
     if (copyCodeBtn) {
-      copyCodeBtn.onclick = (e) => {
-        e.preventDefault();
-        this.copyRoomCode();
-      };
+      copyCodeBtn.addEventListener('click', () => this.copyRoomCode());
     }
-  }
-
-  setupGameControlButtons() {
-    const controlButtons = [
-      { id: 'next-round', handler: () => this.nextRound() },
-      { id: 'play-again', handler: () => this.playAgain() },
-      { id: 'play-again-modal', handler: () => this.playAgain() },
-      { id: 'quit-game', handler: () => this.quitGame() },
-      { id: 'main-menu-modal', handler: () => this.quitGame() }
-    ];
-
-    controlButtons.forEach(({ id, handler }) => {
-      const btn = document.getElementById(id);
-      if (btn) {
-        btn.onclick = (e) => {
-          e.preventDefault();
-          handler();
-        };
-      }
-    });
   }
 
   handleGameModeChange(mode) {
@@ -497,114 +632,39 @@ class GameEngine {
     const difficultyGroup = document.getElementById('difficulty-group');
     const roomCodeDisplay = document.getElementById('room-code-display');
     
-    console.log('Handling game mode change to:', mode);
-    
-    if (difficultyGroup && roomCodeDisplay) {
-      if (mode === 'local') {
-        difficultyGroup.style.display = 'block';
-        roomCodeDisplay.classList.add('hidden');
-      } else {
-        difficultyGroup.style.display = 'none';
-        roomCodeDisplay.classList.add('hidden');
-      }
+    if (mode === 'local') {
+      if (difficultyGroup) difficultyGroup.style.display = 'block';
+      if (roomCodeDisplay) roomCodeDisplay.classList.add('hidden');
+    } else {
+      if (difficultyGroup) difficultyGroup.style.display = 'none';
+      if (roomCodeDisplay) roomCodeDisplay.classList.remove('hidden');
     }
   }
 
-  async startGame() {
-    console.log('Starting game...');
-    
-    const startButton = document.getElementById('start-game');
-    const playerNameInput = document.getElementById('playerName');
-    const gameCountSelect = document.getElementById('gameCount');
-    const difficultySelect = document.getElementById('difficulty');
-    
-    if (!playerNameInput || !gameCountSelect || !difficultySelect) {
-      console.error('Required form elements not found');
-      alert('Form elements not found. Please refresh the page and try again.');
-      return;
-    }
-    
-    const playerName = playerNameInput.value || 'Player 1';
-    
-    gameState.player1.name = playerName;
-    gameState.maxGames = parseInt(gameCountSelect.value);
-    gameState.difficulty = difficultySelect.value;
-
-    console.log('Game settings:', {
-      playerName,
-      maxGames: gameState.maxGames,
-      difficulty: gameState.difficulty,
-      mode: gameState.gameMode
-    });
-
-    if (gameState.gameMode === 'online') {
-      if (!firebaseAvailable) {
-        alert('Firebase is not available. Please play in local mode.');
-        return;
-      }
-
-      try {
-        // Show loading state
-        if (startButton) {
-          startButton.classList.add('loading');
-        }
-        
-        // Create room in Firebase
-        const roomCode = await firebaseManager.createRoom(playerName, {
-          maxGames: gameState.maxGames
-        });
-        
-        gameState.currentRoomCode = roomCode;
-        gameState.isHost = true;
-        gameState.player2.name = 'Waiting for player...';
-        
-        // Show room code
-        const roomCodeText = document.getElementById('room-code-text');
-        const roomCodeDisplay = document.getElementById('room-code-display');
-        const hostNameElement = document.getElementById('host-name');
-        
-        if (roomCodeText) roomCodeText.textContent = roomCode;
-        if (roomCodeDisplay) roomCodeDisplay.classList.remove('hidden');
-        if (hostNameElement) hostNameElement.textContent = `${playerName} (Host)`;
-        
-        if (startButton) {
-          startButton.classList.remove('loading');
-        }
-        
-      } catch (error) {
-        console.error('Error creating room:', error);
-        if (startButton) {
-          startButton.classList.remove('loading');
-        }
-        alert('Failed to create room. Please try again.');
-      }
-    } else {
-      gameState.player2.name = 'Computer';
-      this.initializeGame();
-      navigateToSection('game-play');
+  copyRoomCode() {
+    const codeElement = document.getElementById('room-code-text');
+    if (codeElement) {
+      const code = codeElement.textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        const btn = document.getElementById('copy-code');
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.textContent = originalText;
+        }, 2000);
+      });
     }
   }
 
   async joinGame() {
-    console.log('Joining game...');
-    
-    const joinButton = document.getElementById('join-game-btn');
     const roomCodeInput = document.getElementById('room-code-input');
     const playerNameInput = document.getElementById('join-player-name');
     const statusElement = document.getElementById('join-status');
     
-    if (!roomCodeInput || !playerNameInput || !statusElement) {
-      console.error('Required form elements not found');
-      return;
-    }
+    if (!roomCodeInput || !playerNameInput || !statusElement) return;
 
     const roomCode = roomCodeInput.value.toUpperCase();
     const playerName = playerNameInput.value || 'Player 2';
-
-    if (!firebaseAvailable) {
-      this.showStatus(statusElement, 'Firebase is not available. Cannot join online games.', 'error');
-      return;
-    }
 
     if (!roomCode || roomCode.length !== 6) {
       this.showStatus(statusElement, 'Please enter a valid 6-digit room code', 'error');
@@ -612,36 +672,71 @@ class GameEngine {
     }
 
     try {
-      if (joinButton) {
-        joinButton.classList.add('loading');
-      }
+      this.showStatus(statusElement, 'Joining game...', 'info');
       
-      // Simulate joining room (would use Firebase in real implementation)
+      const result = await this.firebaseManager.joinRoom(roomCode, playerName);
+      gameState.currentRoomCode = roomCode;
+      gameState.player1.name = playerName;
+      gameState.player2.name = result.hostName;
+      gameState.gameMode = 'online';
+
+      this.firebaseManager.setupRealTimeListeners(roomCode, result.playerId);
+      
       this.showStatus(statusElement, 'Successfully joined the game!', 'success');
       
-      setTimeout(() => {
-        gameState.player1.name = playerName;
-        gameState.player2.name = 'Host Player';
-        gameState.gameMode = 'online';
-        gameState.maxGames = 3;
-        this.initializeGame();
-        navigateToSection('game-play');
-      }, 1500);
-      
     } catch (error) {
-      console.error('Error joining room:', error);
-      this.showStatus(statusElement, 'Failed to join room. Please try again.', 'error');
-    } finally {
-      if (joinButton) {
-        joinButton.classList.remove('loading');
+      this.showStatus(statusElement, error.message, 'error');
+    }
+  }
+
+  async startGame() {
+    console.log('Starting game with mode:', gameState.gameMode);
+    
+    const playerNameInput = document.getElementById('playerName');
+    const gameCountSelect = document.getElementById('gameCount');
+    const difficultySelect = document.getElementById('difficulty');
+    
+    if (playerNameInput) {
+      gameState.player1.name = playerNameInput.value || 'Player 1';
+    }
+    if (gameCountSelect) {
+      gameState.maxGames = parseInt(gameCountSelect.value);
+    }
+    if (difficultySelect) {
+      gameState.difficulty = difficultySelect.value;
+    }
+
+    if (gameState.gameMode === 'local') {
+      gameState.player2.name = 'Computer';
+      this.initializeGame();
+      window.navigationManager.navigateTo('game-play');
+    } else {
+      try {
+        const result = await this.firebaseManager.createRoom({
+          hostName: gameState.player1.name,
+          maxGames: gameState.maxGames,
+          difficulty: gameState.difficulty
+        });
+        
+        gameState.currentRoomCode = result.roomCode;
+        const roomCodeText = document.getElementById('room-code-text');
+        if (roomCodeText) {
+          roomCodeText.textContent = result.roomCode;
+        }
+        
+        this.firebaseManager.setupRealTimeListeners(result.roomCode, result.playerId);
+        
+      } catch (error) {
+        alert('Failed to create room: ' + error.message);
       }
     }
   }
 
+  initializeOnlineGame() {
+    this.initializeGame();
+  }
+
   initializeGame() {
-    console.log('Initializing game...');
-    
-    // Reset game state
     gameState.currentGame = 0;
     gameState.player1.score = 0;
     gameState.player2.score = 0;
@@ -652,39 +747,25 @@ class GameEngine {
 
     this.updateGameUI();
     this.resetRound();
-    
-    // Show online game status if online
-    const onlineStatus = document.getElementById('online-game-status');
-    if (onlineStatus && gameState.gameMode === 'online') {
-      onlineStatus.classList.add('visible');
-      
-      const connectionText = document.getElementById('game-connection-text');
-      const connectionDot = document.getElementById('game-connection-dot');
-      
-      if (connectionText) connectionText.textContent = 'Connected';
-      if (connectionDot) connectionDot.className = 'status-dot connected';
-    }
   }
 
   updateGameUI() {
-    const elements = [
-      { id: 'player1-name', value: gameState.player1.name },
-      { id: 'player2-name', value: gameState.player2.name },
-      { id: 'player1-score', value: gameState.player1.score },
-      { id: 'player2-score', value: gameState.player2.score }
-    ];
-
-    elements.forEach(({ id, value }) => {
-      const element = document.getElementById(id);
-      if (element) element.textContent = value;
-    });
+    const player1NameEl = document.getElementById('player1-name');
+    const player2NameEl = document.getElementById('player2-name');
+    const player1ScoreEl = document.getElementById('player1-score');
+    const player2ScoreEl = document.getElementById('player2-score');
+    const progressEl = document.getElementById('game-progress-text');
     
-    const progressElement = document.getElementById('game-progress-text');
-    if (progressElement) {
+    if (player1NameEl) player1NameEl.textContent = gameState.player1.name;
+    if (player2NameEl) player2NameEl.textContent = gameState.player2.name;
+    if (player1ScoreEl) player1ScoreEl.textContent = gameState.player1.score;
+    if (player2ScoreEl) player2ScoreEl.textContent = gameState.player2.score;
+    
+    if (progressEl) {
       const progressText = gameState.maxGames === -1 
         ? `Round ${gameState.currentGame + 1}`
         : `Round ${gameState.currentGame + 1} of ${gameState.maxGames}`;
-      progressElement.textContent = progressText;
+      progressEl.textContent = progressText;
     }
   }
 
@@ -693,124 +774,88 @@ class GameEngine {
     gameState.player2.choice = null;
     gameState.waitingForChoice = false;
 
-    // Reset UI elements
-    const uiResets = [
-      { id: 'player1-choice', value: '?' },
-      { id: 'player1-choice-name', value: 'Make your choice' },
-      { id: 'player2-choice', value: '?' },
-      { id: 'player2-choice-name', value: gameState.gameMode === 'online' ? 'Waiting for opponent...' : 'Waiting...' },
-      { id: 'round-result', value: '' },
-      { id: 'result-explanation', value: '' },
-      { id: 'player1-status', value: '' },
-      { id: 'player2-status', value: '' }
-    ];
+    const elements = {
+      player1Choice: document.getElementById('player1-choice'),
+      player1ChoiceName: document.getElementById('player1-choice-name'),
+      player2Choice: document.getElementById('player2-choice'),
+      player2ChoiceName: document.getElementById('player2-choice-name'),
+      roundResult: document.getElementById('round-result'),
+      resultExplanation: document.getElementById('result-explanation'),
+      nextRound: document.getElementById('next-round'),
+      playAgain: document.getElementById('play-again')
+    };
 
-    uiResets.forEach(({ id, value }) => {
-      const element = document.getElementById(id);
-      if (element) element.textContent = value;
-    });
+    if (elements.player1Choice) elements.player1Choice.textContent = '?';
+    if (elements.player1ChoiceName) elements.player1ChoiceName.textContent = 'Make your choice';
+    if (elements.player2Choice) elements.player2Choice.textContent = '?';
+    if (elements.player2ChoiceName) elements.player2ChoiceName.textContent = 'Waiting...';
+    if (elements.roundResult) elements.roundResult.textContent = '';
+    if (elements.resultExplanation) elements.resultExplanation.textContent = '';
 
-    // Reset choice buttons
     document.querySelectorAll('.choice-btn').forEach(btn => {
       btn.classList.remove('selected');
       btn.disabled = false;
     });
 
-    // Reset choice icons
     document.querySelectorAll('.choice-icon').forEach(icon => {
       icon.classList.remove('winner', 'loser');
     });
 
-    // Hide/show controls
-    const controlElements = [
-      { id: 'next-round', action: 'add' },
-      { id: 'play-again', action: 'add' },
-      { id: 'waiting-message', action: 'remove' },
-      { id: 'choice-buttons', action: 'remove', className: 'disabled' }
-    ];
-
-    controlElements.forEach(({ id, action, className = 'hidden' }) => {
-      const element = document.getElementById(id);
-      if (element) {
-        if (action === 'add') {
-          element.classList.add(className);
-        } else {
-          element.classList.remove(className);
-        }
-      }
-    });
+    if (elements.nextRound) elements.nextRound.classList.add('hidden');
+    if (elements.playAgain) elements.playAgain.classList.add('hidden');
   }
 
   async makeChoice(choice) {
     if (!gameState.isGameActive || gameState.waitingForChoice) return;
 
-    console.log('Player choice:', choice);
-
     gameState.player1.choice = choice;
     gameState.waitingForChoice = true;
 
-    // Update UI
     const choiceData = choices.find(c => c.id === choice);
-    if (choiceData) {
-      const elements = [
-        { id: 'player1-choice', value: choiceData.emoji },
-        { id: 'player1-choice-name', value: choiceData.name },
-        { id: 'player1-status', value: 'Choice made' }
-      ];
+    const player1Choice = document.getElementById('player1-choice');
+    const player1ChoiceName = document.getElementById('player1-choice-name');
+    
+    if (player1Choice) player1Choice.textContent = choiceData.emoji;
+    if (player1ChoiceName) player1ChoiceName.textContent = choiceData.name;
 
-      elements.forEach(({ id, value }) => {
-        const element = document.getElementById(id);
-        if (element) element.textContent = value;
-      });
-    }
-
-    // Highlight selected button and disable all
     document.querySelectorAll('.choice-btn').forEach(btn => {
       btn.classList.remove('selected');
-      if (btn.getAttribute('data-choice') === choice) {
+      if (btn.dataset.choice === choice) {
         btn.classList.add('selected');
       }
       btn.disabled = true;
     });
 
-    // Store player choice for AI learning
     gameState.playerHistory.push(choice);
 
-    if (gameState.gameMode === 'online') {
-      // Show waiting message
-      const waitingMessage = document.getElementById('waiting-message');
-      const waitingText = document.getElementById('waiting-text');
-      const choiceButtons = document.getElementById('choice-buttons');
-      
-      if (waitingMessage) waitingMessage.classList.add('visible');
-      if (waitingText) waitingText.textContent = 'Waiting for opponent\'s choice...';
-      if (choiceButtons) choiceButtons.classList.add('disabled');
-      
-      // Simulate opponent choice after delay
-      setTimeout(() => {
-        gameState.player2.choice = this.getRandomChoice();
-        this.resolveRound();
-      }, 2000 + Math.random() * 2000);
-      
-    } else {
-      // Local game - get computer choice
+    if (gameState.gameMode === 'local') {
       gameState.player2.choice = this.getComputerChoice();
-      
-      // Small delay for better UX
       setTimeout(() => {
         this.resolveRound();
       }, 1000);
+    } else {
+      try {
+        await this.firebaseManager.submitChoice(
+          gameState.currentRoomCode,
+          gameState.player1.id,
+          choice
+        );
+      } catch (error) {
+        console.error('Failed to submit choice:', error);
+      }
     }
   }
 
   getComputerChoice() {
+    const allChoices = choices.map(c => c.id);
+    
     switch (gameState.difficulty) {
       case 'easy':
         return this.getRandomChoice();
       case 'medium':
-        return this.getMediumAIChoice();
+        return this.getMediumAIChoice(allChoices);
       case 'hard':
-        return this.getHardAIChoice();
+        return this.getHardAIChoice(allChoices);
       default:
         return this.getRandomChoice();
     }
@@ -821,7 +866,7 @@ class GameEngine {
     return allChoices[Math.floor(Math.random() * allChoices.length)];
   }
 
-  getMediumAIChoice() {
+  getMediumAIChoice(allChoices) {
     if (gameState.playerHistory.length < 3) {
       return this.getRandomChoice();
     }
@@ -836,7 +881,7 @@ class GameEngine {
     return this.getRandomChoice();
   }
 
-  getHardAIChoice() {
+  getHardAIChoice(allChoices) {
     if (gameState.playerHistory.length < 2) {
       return this.getRandomChoice();
     }
@@ -896,47 +941,69 @@ class GameEngine {
   }
 
   resolveRound() {
+    this.processRoundResult();
+  }
+
+  resolveOnlineRound() {
+    this.processRoundResult();
+    this.updateFirebaseScores();
+  }
+
+  async updateFirebaseScores() {
+    if (gameState.gameMode === 'online' && gameState.currentRoomCode) {
+      try {
+        await this.firebaseManager.updatePlayerScore(
+          gameState.currentRoomCode,
+          gameState.player1.id,
+          gameState.player1.score
+        );
+
+        if (this.isGameOver()) {
+          await this.firebaseManager.updateGameState(gameState.currentRoomCode, {
+            status: 'finished'
+          });
+        } else {
+          await this.firebaseManager.updateGameState(gameState.currentRoomCode, {
+            currentRound: gameState.currentGame,
+            bothPlayersReady: false
+          });
+
+          // Clear choices for next round
+          const players = await database.ref(`rooms/${gameState.currentRoomCode}/players`).once('value');
+          const playersData = players.val() || {};
+          
+          for (let playerId of Object.keys(playersData)) {
+            await database.ref(`rooms/${gameState.currentRoomCode}/players/${playerId}/choice`).set(null);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to update Firebase scores:', error);
+      }
+    }
+  }
+
+  processRoundResult() {
     const player1Choice = gameState.player1.choice;
     const player2Choice = gameState.player2.choice;
 
-    console.log('Resolving round:', player1Choice, 'vs', player2Choice);
-
-    // Hide waiting message
-    const waitingMessage = document.getElementById('waiting-message');
-    if (waitingMessage) {
-      waitingMessage.classList.remove('visible');
-    }
-
-    // Update UI with opponent choice
     const p2ChoiceData = choices.find(c => c.id === player2Choice);
-    if (p2ChoiceData) {
-      const elements = [
-        { id: 'player2-choice', value: p2ChoiceData.emoji },
-        { id: 'player2-choice-name', value: p2ChoiceData.name },
-        { id: 'player2-status', value: 'Choice made' }
-      ];
+    const player2ChoiceEl = document.getElementById('player2-choice');
+    const player2ChoiceNameEl = document.getElementById('player2-choice-name');
+    
+    if (player2ChoiceEl) player2ChoiceEl.textContent = p2ChoiceData.emoji;
+    if (player2ChoiceNameEl) player2ChoiceNameEl.textContent = p2ChoiceData.name;
 
-      elements.forEach(({ id, value }) => {
-        const element = document.getElementById(id);
-        if (element) element.textContent = value;
-      });
-    }
-
-    // Determine winner
     const result = this.determineWinner(player1Choice, player2Choice);
     
-    // Update scores
     if (result.winner === 1) {
       gameState.player1.score++;
     } else if (result.winner === 2) {
       gameState.player2.score++;
     }
 
-    // Update UI with result
     this.displayRoundResult(result);
     this.updateGameUI();
 
-    // Store round result
     gameState.gameHistory.push({
       round: gameState.currentGame + 1,
       player1Choice,
@@ -947,17 +1014,11 @@ class GameEngine {
 
     gameState.currentGame++;
 
-    // Check if game is over
     if (this.isGameOver()) {
       setTimeout(() => this.endGame(), 2000);
     } else {
-      // Show next round button
-      setTimeout(() => {
-        const nextRoundBtn = document.getElementById('next-round');
-        if (nextRoundBtn) {
-          nextRoundBtn.classList.remove('hidden');
-        }
-      }, 1000);
+      const nextRoundBtn = document.getElementById('next-round');
+      if (nextRoundBtn) nextRoundBtn.classList.remove('hidden');
     }
   }
 
@@ -991,8 +1052,6 @@ class GameEngine {
   displayRoundResult(result) {
     const resultElement = document.getElementById('round-result');
     const explanationElement = document.getElementById('result-explanation');
-    
-    // Update choice icons based on result
     const player1Icon = document.getElementById('player1-choice');
     const player2Icon = document.getElementById('player2-choice');
     
@@ -1019,17 +1078,15 @@ class GameEngine {
   }
 
   isGameOver() {
-    if (gameState.maxGames === -1) return false; // Unlimited mode
+    if (gameState.maxGames === -1) return false;
     return gameState.currentGame >= gameState.maxGames;
   }
 
   async endGame() {
     gameState.isGameActive = false;
     
-    // Update leaderboard
     await this.updateLeaderboard();
     
-    // Show game over modal
     const modal = document.getElementById('game-over-modal');
     const title = document.getElementById('game-over-title');
     const finalScore = document.getElementById('final-score');
@@ -1071,46 +1128,55 @@ class GameEngine {
     const losses = gameState.player2.score;
     const ties = totalGames - wins - losses;
 
-    // Find existing player or create new entry
-    let playerEntry = gameState.leaderboard.find(p => p.name === playerName);
-    
-    if (!playerEntry) {
-      playerEntry = {
-        name: playerName,
-        totalGames: 0,
-        totalWins: 0,
-        totalLosses: 0,
-        totalTies: 0,
-        winStreak: 0,
-        maxWinStreak: 0
-      };
-      gameState.leaderboard.push(playerEntry);
+    if (gameState.gameMode === 'online' && gameState.player1.id) {
+      // Save to Firebase leaderboard
+      try {
+        await this.firebaseManager.saveToLeaderboard({
+          id: gameState.player1.id,
+          name: playerName,
+          totalGames,
+          totalWins: wins,
+          totalLosses: losses,
+          totalTies: ties,
+          won: wins > losses,
+          lost: losses > wins
+        });
+      } catch (error) {
+        console.error('Failed to save to leaderboard:', error);
+      }
+    } else {
+      // Local storage for local games
+      let playerEntry = gameState.leaderboard.find(p => p.name === playerName);
+      
+      if (!playerEntry) {
+        playerEntry = {
+          name: playerName,
+          totalGames: 0,
+          totalWins: 0,
+          totalLosses: 0,
+          totalTies: 0,
+          winStreak: 0,
+          maxWinStreak: 0
+        };
+        gameState.leaderboard.push(playerEntry);
+      }
+
+      playerEntry.totalGames += totalGames;
+      playerEntry.totalWins += wins;
+      playerEntry.totalLosses += losses;
+      playerEntry.totalTies += ties;
+
+      const finalResult = wins > losses ? 'win' : losses > wins ? 'loss' : 'tie';
+      if (finalResult === 'win') {
+        playerEntry.winStreak++;
+        playerEntry.maxWinStreak = Math.max(playerEntry.maxWinStreak, playerEntry.winStreak);
+      } else if (finalResult === 'loss') {
+        playerEntry.winStreak = 0;
+      }
     }
 
-    // Update stats
-    playerEntry.totalGames += totalGames;
-    playerEntry.totalWins += wins;
-    playerEntry.totalLosses += losses;
-    playerEntry.totalTies += ties;
-
-    // Update win streak
-    const finalResult = wins > losses ? 'win' : losses > wins ? 'loss' : 'tie';
-    if (finalResult === 'win') {
-      playerEntry.winStreak++;
-      playerEntry.maxWinStreak = Math.max(playerEntry.maxWinStreak, playerEntry.winStreak);
-    } else if (finalResult === 'loss') {
-      playerEntry.winStreak = 0;
-    }
-
-    // Update Firebase if available
-    if (firebaseAvailable) {
-      const gameResult = { totalGames, wins, losses, ties };
-      await firebaseManager.updateLeaderboard(playerName, gameResult);
-    }
-
-    // Update leaderboard display
-    if (leaderboardManager) {
-      leaderboardManager.updateDisplay();
+    if (window.leaderboardManager) {
+      window.leaderboardManager.updateDisplay();
     }
   }
 
@@ -1120,73 +1186,43 @@ class GameEngine {
 
   playAgain() {
     const modal = document.getElementById('game-over-modal');
-    if (modal) {
-      modal.classList.add('hidden');
-    }
-    
-    if (gameState.gameMode === 'online') {
-      alert('Play again functionality for online games would require both players to agree. Returning to main menu.');
-      this.quitGame();
-      return;
-    }
-    
+    if (modal) modal.classList.add('hidden');
     this.initializeGame();
   }
 
-  async quitGame() {
+  quitGame() {
     const modal = document.getElementById('game-over-modal');
-    if (modal) {
-      modal.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
+    
+    if (gameState.gameMode === 'online' && gameState.currentRoomCode) {
+      this.firebaseManager.handlePlayerDisconnection(
+        gameState.currentRoomCode,
+        gameState.player1.id
+      );
+      this.firebaseManager.cleanup();
     }
     
-    if (gameState.gameMode === 'online' && firebaseAvailable) {
-      await firebaseManager.leaveRoom();
-    }
-    
-    // Reset game state
     gameState.isGameActive = false;
     gameState.currentRoomCode = null;
-    gameState.isHost = false;
-    gameState.opponentConnected = false;
+    gameState.gameMode = 'local';
     
-    const onlineStatus = document.getElementById('online-game-status');
-    if (onlineStatus) {
-      onlineStatus.classList.remove('visible');
-    }
-    
-    navigateToSection('main-menu');
-  }
-
-  copyRoomCode() {
-    const code = document.getElementById('room-code-text');
-    if (code && code.textContent) {
-      navigator.clipboard.writeText(code.textContent).then(() => {
-        const btn = document.getElementById('copy-code');
-        if (btn) {
-          const originalText = btn.textContent;
-          btn.textContent = 'Copied!';
-          setTimeout(() => {
-            btn.textContent = originalText;
-          }, 2000);
-        }
-      });
-    }
+    window.navigationManager.navigateTo('main-menu');
   }
 
   showStatus(element, message, type) {
-    if (element) {
-      element.textContent = message;
-      element.className = `status-message ${type}`;
-      element.classList.remove('hidden');
-      
-      setTimeout(() => {
-        element.classList.add('hidden');
-      }, 5000);
-    }
+    if (!element) return;
+    
+    element.textContent = message;
+    element.className = `status-message ${type}`;
+    element.classList.remove('hidden');
+    
+    setTimeout(() => {
+      element.classList.add('hidden');
+    }, 5000);
   }
 }
 
-// Feedback Manager
+// Feedback System
 class FeedbackManager {
   constructor() {
     this.currentRating = 5;
@@ -1194,30 +1230,28 @@ class FeedbackManager {
   }
 
   initializeEventListeners() {
-    // Star rating
-    const stars = document.querySelectorAll('.star');
-    stars.forEach(star => {
-      star.onclick = (e) => {
-        e.preventDefault();
-        const rating = parseInt(star.getAttribute('data-rating'));
-        this.setRating(rating);
-      };
+    setTimeout(() => {
+      this.setupEventListeners();
+    }, 100);
+  }
+
+  setupEventListeners() {
+    document.querySelectorAll('.star').forEach(star => {
+      star.addEventListener('click', (e) => this.setRating(parseInt(e.target.dataset.rating)));
     });
 
-    // Form submission
     const feedbackForm = document.getElementById('feedback-form');
     if (feedbackForm) {
-      feedbackForm.onsubmit = (e) => {
+      feedbackForm.addEventListener('submit', (e) => {
         e.preventDefault();
         this.submitFeedback();
-      };
+      });
     }
   }
 
   setRating(rating) {
     this.currentRating = rating;
     
-    // Update star display
     document.querySelectorAll('.star').forEach((star, index) => {
       if (index < rating) {
         star.classList.add('active');
@@ -1226,42 +1260,47 @@ class FeedbackManager {
       }
     });
     
-    // Update rating text
     const ratingTexts = ['Terrible', 'Poor', 'Fair', 'Good', 'Excellent'];
-    const ratingTextElement = document.querySelector('.rating-text');
-    if (ratingTextElement) {
-      ratingTextElement.textContent = 
+    const ratingTextEl = document.querySelector('.rating-text');
+    if (ratingTextEl) {
+      ratingTextEl.textContent = 
         `Click to rate (${rating} star${rating !== 1 ? 's' : ''} - ${ratingTexts[rating - 1]})`;
     }
   }
 
-  submitFeedback() {
-    const nameInput = document.getElementById('feedback-name');
-    const emailInput = document.getElementById('feedback-email');
-    const messageInput = document.getElementById('feedback-message');
+  async submitFeedback() {
+    const nameEl = document.getElementById('feedback-name');
+    const emailEl = document.getElementById('feedback-email');
+    const messageEl = document.getElementById('feedback-message');
 
-    if (!messageInput || !messageInput.value.trim()) {
+    const name = nameEl ? nameEl.value : '';
+    const email = emailEl ? emailEl.value : '';
+    const message = messageEl ? messageEl.value : '';
+
+    if (!message.trim()) {
       alert('Please enter your feedback message.');
       return;
     }
 
-    const feedbackData = {
-      name: nameInput ? nameInput.value || 'Anonymous' : 'Anonymous',
-      email: emailInput ? emailInput.value : '',
-      rating: this.currentRating,
-      message: messageInput.value,
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('Feedback submitted:', feedbackData);
-
-    const form = document.getElementById('feedback-form');
-    const success = document.getElementById('feedback-success');
-    
-    if (form && success) {
-      form.classList.add('hidden');
-      success.classList.remove('hidden');
+    try {
+      if (database) {
+        await database.ref('feedback').push({
+          name: name || 'Anonymous',
+          email,
+          rating: this.currentRating,
+          message,
+          timestamp: Date.now()
+        });
+      }
+    } catch (error) {
+      console.error('Failed to save feedback:', error);
     }
+
+    const formEl = document.getElementById('feedback-form');
+    const successEl = document.getElementById('feedback-success');
+    
+    if (formEl) formEl.classList.add('hidden');
+    if (successEl) successEl.classList.remove('hidden');
 
     setTimeout(() => {
       this.resetForm();
@@ -1269,19 +1308,16 @@ class FeedbackManager {
   }
 
   resetForm() {
-    const form = document.getElementById('feedback-form');
-    const success = document.getElementById('feedback-success');
-    const formElement = form?.querySelector('form') || document.getElementById('feedback-form');
+    const formEl = document.getElementById('feedback-form');
+    const successEl = document.getElementById('feedback-success');
     
-    if (formElement && typeof formElement.reset === 'function') {
-      formElement.reset();
+    if (formEl) {
+      formEl.reset();
+      formEl.classList.remove('hidden');
     }
+    if (successEl) successEl.classList.add('hidden');
     
-    if (form && success) {
-      form.classList.remove('hidden');
-      success.classList.add('hidden');
-      this.setRating(5);
-    }
+    this.setRating(5);
   }
 }
 
@@ -1289,69 +1325,42 @@ class FeedbackManager {
 class LeaderboardManager {
   constructor() {
     this.initializeEventListeners();
+    this.loadData();
   }
 
   initializeEventListeners() {
-    const sortSelect = document.getElementById('sort-by');
-    if (sortSelect) {
-      sortSelect.onchange = () => {
-        this.updateDisplay();
-      };
-    }
-
-    const refreshBtn = document.getElementById('refresh-leaderboard');
-    if (refreshBtn) {
-      refreshBtn.onclick = (e) => {
-        e.preventDefault();
-        this.loadLeaderboard();
-      };
-    }
+    setTimeout(() => {
+      const sortBy = document.getElementById('sort-by');
+      if (sortBy) {
+        sortBy.addEventListener('change', () => {
+          this.updateDisplay();
+        });
+      }
+    }, 100);
   }
 
-  async loadLeaderboard() {
-    const syncDot = document.getElementById('sync-dot');
-    const syncText = document.getElementById('sync-text');
-    const loadingElement = document.getElementById('leaderboard-loading');
-    
-    if (loadingElement) {
-      loadingElement.style.display = 'flex';
-    }
-    if (syncDot) {
-      syncDot.className = 'sync-dot';
-    }
-    if (syncText) {
-      syncText.textContent = 'Loading leaderboard...';
-    }
-
-    try {
-      if (firebaseAvailable) {
-        const firebaseLeaderboard = await firebaseManager.loadLeaderboard();
-        if (firebaseLeaderboard.length > 0) {
-          gameState.leaderboard = firebaseLeaderboard;
-        }
-        if (syncDot) syncDot.className = 'sync-dot synced';
-        if (syncText) syncText.textContent = 'Synced with Firebase';
-      } else {
-        if (syncDot) syncDot.className = 'sync-dot error';
-        if (syncText) syncText.textContent = 'Local data only';
+  async loadData() {
+    if (database && window.gameEngine) {
+      try {
+        const firebaseData = await window.gameEngine.firebaseManager?.loadLeaderboard() || [];
+        gameState.leaderboard = [...gameState.leaderboard, ...firebaseData];
+        this.updateDisplay();
+      } catch (error) {
+        console.error('Failed to load leaderboard:', error);
+        this.updateDisplay();
       }
-    } catch (error) {
-      console.error('Error loading leaderboard:', error);
-      if (syncDot) syncDot.className = 'sync-dot error';
-      if (syncText) syncText.textContent = 'Sync failed';
+    } else {
+      this.updateDisplay();
     }
-
-    if (loadingElement) {
-      loadingElement.style.display = 'none';
-    }
-    this.updateDisplay();
   }
 
   updateDisplay() {
-    const sortBy = document.getElementById('sort-by')?.value || 'winPercentage';
+    const sortByEl = document.getElementById('sort-by');
     const tbody = document.getElementById('leaderboard-body');
     
     if (!tbody) return;
+    
+    const sortBy = sortByEl ? sortByEl.value : 'winPercentage';
     
     if (gameState.leaderboard.length === 0) {
       tbody.innerHTML = '<div class="empty-state"><p>No games played yet. Start playing to see statistics!</p></div>';
@@ -1361,15 +1370,15 @@ class LeaderboardManager {
     const sorted = [...gameState.leaderboard].sort((a, b) => {
       switch (sortBy) {
         case 'winPercentage':
-          const aPercent = a.totalGames > 0 ? (a.totalWins || a.wins || 0) / a.totalGames * 100 : 0;
-          const bPercent = b.totalGames > 0 ? (b.totalWins || b.wins || 0) / b.totalGames * 100 : 0;
+          const aPercent = a.totalGames > 0 ? (a.totalWins / a.totalGames) * 100 : 0;
+          const bPercent = b.totalGames > 0 ? (b.totalWins / b.totalGames) * 100 : 0;
           return bPercent - aPercent;
         case 'totalWins':
-          return (b.totalWins || b.wins || 0) - (a.totalWins || a.wins || 0);
+          return b.totalWins - a.totalWins;
         case 'totalGames':
           return b.totalGames - a.totalGames;
         case 'winStreak':
-          return (b.winStreak || 0) - (a.winStreak || 0);
+          return b.winStreak - a.winStreak;
         default:
           return 0;
       }
@@ -1377,11 +1386,9 @@ class LeaderboardManager {
 
     let html = '';
     sorted.forEach((player, index) => {
-      const totalGames = player.totalGames || 0;
-      const wins = player.totalWins || player.wins || 0;
-      const losses = player.totalLosses || player.losses || 0;
-      const ties = player.totalTies || player.ties || 0;
-      const winPercentage = totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0;
+      const winPercentage = player.totalGames > 0 
+        ? Math.round((player.totalWins / player.totalGames) * 100)
+        : 0;
       
       const rankClass = index < 3 ? `rank-${index + 1}` : '';
       
@@ -1390,8 +1397,8 @@ class LeaderboardManager {
           <div class="table-cell ${rankClass}">${index + 1}</div>
           <div class="table-cell">${player.name}</div>
           <div class="table-cell">${winPercentage}%</div>
-          <div class="table-cell">${wins}/${losses}/${ties}</div>
-          <div class="table-cell">${player.winStreak || 0}</div>
+          <div class="table-cell">${player.totalWins}/${player.totalLosses}/${player.totalTies}</div>
+          <div class="table-cell">${player.winStreak}</div>
         </div>
       `;
     });
@@ -1405,33 +1412,27 @@ let navigationManager;
 let gameEngine;
 let feedbackManager;
 let leaderboardManager;
-let firebaseManager;
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOM loaded - Initializing application...');
+  console.log('DOM loaded, initializing app...');
   
-  try {
-    // Initialize Firebase first
-    firebaseManager = new FirebaseManager();
-    
-    // Initialize other managers
-    navigationManager = new NavigationManager();
-    gameEngine = new GameEngine();
-    feedbackManager = new FeedbackManager();
-    leaderboardManager = new LeaderboardManager();
-    
-    // Initialize with sample leaderboard data
-    gameState.leaderboard = [
-      { name: 'AI Master', totalGames: 100, totalWins: 75, totalLosses: 20, totalTies: 5, winStreak: 5, maxWinStreak: 12 },
-      { name: 'Rock Star', totalGames: 50, totalWins: 30, totalLosses: 15, totalTies: 5, winStreak: 2, maxWinStreak: 8 },
-      { name: 'Paper Trail', totalGames: 25, totalWins: 15, totalLosses: 8, totalTies: 2, winStreak: 0, maxWinStreak: 4 }
-    ];
-    
-    leaderboardManager.updateDisplay();
-    
-    console.log('Application initialized successfully');
-    
-  } catch (error) {
-    console.error('Error initializing application:', error);
-  }
+  navigationManager = new NavigationManager();
+  gameEngine = new GameEngine();
+  feedbackManager = new FeedbackManager();
+  leaderboardManager = new LeaderboardManager();
+  
+  // Make instances globally available
+  window.navigationManager = navigationManager;
+  window.gameEngine = gameEngine;
+  window.feedbackManager = feedbackManager;
+  window.leaderboardManager = leaderboardManager;
+  
+  // Initialize with some sample leaderboard data for local games
+  gameState.leaderboard = [
+    { name: 'AI Master', totalGames: 100, totalWins: 75, totalLosses: 20, totalTies: 5, winStreak: 5, maxWinStreak: 12 },
+    { name: 'Rock Star', totalGames: 50, totalWins: 30, totalLosses: 15, totalTies: 5, winStreak: 2, maxWinStreak: 8 },
+    { name: 'Paper Trail', totalGames: 25, totalWins: 15, totalLosses: 8, totalTies: 2, winStreak: 0, maxWinStreak: 4 }
+  ];
+  
+  console.log('App initialized successfully');
 });

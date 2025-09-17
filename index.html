@@ -3,27 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rock Paper Scissors Lizard Spock - Online Multiplayer</title>
+    <title>Rock Paper Scissors Lizard Spock</title>
     <link rel="stylesheet" href="style.css">
-    
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 </head>
 <body>
     <div class="app">
         <header class="header">
             <div class="container">
                 <h1 class="game-title">🗿📄✂️🦎🖖 Rock Paper Scissors Lizard Spock</h1>
-                
-                <!-- Firebase Connection Status -->
-                <div class="connection-status" id="connection-status">
-                    <div class="status-indicator" id="status-indicator">
-                        <span class="status-dot" id="status-dot"></span>
-                        <span class="status-text" id="status-text">Connecting to Firebase...</span>
-                    </div>
-                </div>
-                
                 <nav class="nav" id="main-nav">
                     <button class="btn btn--outline nav-btn" data-section="main-menu">Main Menu</button>
                 </nav>
@@ -32,65 +19,6 @@
 
         <main class="main">
             <div class="container">
-                <!-- Firebase Configuration Notice -->
-                <div id="firebase-config-notice" class="config-notice hidden">
-                    <h3>⚠️ Firebase Configuration Required</h3>
-                    <p>To use online multiplayer features, you need to configure Firebase. The app is currently running in local mode only.</p>
-                    <details class="config-details">
-                        <summary>Click here for setup instructions</summary>
-                        <div class="config-content">
-                            <h4>Step 1: Create Firebase Project</h4>
-                            <ol>
-                                <li>Go to <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a></li>
-                                <li>Click "Create a project" and follow the setup wizard</li>
-                                <li>Enable Realtime Database in "Build" > "Realtime Database"</li>
-                                <li>Start in test mode for development</li>
-                            </ol>
-                            
-                            <h4>Step 2: Get Configuration</h4>
-                            <ol>
-                                <li>In Firebase Console, go to Project Settings (gear icon)</li>
-                                <li>Scroll to "Your apps" section</li>
-                                <li>Click "Web app" and register your app</li>
-                                <li>Copy the config object</li>
-                            </ol>
-                            
-                            <h4>Step 3: Update app.js</h4>
-                            <p>Replace the placeholder config in app.js with your Firebase config:</p>
-                            <pre><code>const firebaseConfig = {
-  apiKey: "your-actual-api-key",
-  authDomain: "your-project.firebaseapp.com",
-  databaseURL: "https://your-project-default-rtdb.firebaseio.com/",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "your-actual-app-id"
-};</code></pre>
-                            
-                            <h4>Step 4: Database Security Rules</h4>
-                            <p>In Realtime Database Rules, use these rules for development:</p>
-                            <pre><code>{
-  "rules": {
-    "rooms": {
-      "$roomId": {
-        ".read": true,
-        ".write": true
-      }
-    },
-    "leaderboard": {
-      ".read": true,
-      ".write": true
-    },
-    "gameHistory": {
-      ".read": true,
-      ".write": true
-    }
-  }
-}</code></pre>
-                        </div>
-                    </details>
-                </div>
-
                 <!-- Main Menu Section -->
                 <section id="main-menu" class="section active">
                     <div class="menu-grid">
@@ -104,10 +32,6 @@
                             <div class="menu-card__icon">🌐</div>
                             <h3>Join Game</h3>
                             <p>Join an existing online game</p>
-                            <div class="online-indicator" id="join-online-indicator">
-                                <span class="indicator-dot"></span>
-                                <span>Online features available</span>
-                            </div>
                         </button>
                         
                         <button class="menu-card" data-section="rules">
@@ -116,20 +40,16 @@
                             <p>Learn how to play the game</p>
                         </button>
                         
-                        <button class="menu-card" data-section="leaderboard">
-                            <div class="menu-card__icon">🏆</div>
-                            <h3>Global Leaderboard</h3>
-                            <p>View top players worldwide</p>
-                            <div class="online-indicator" id="leaderboard-online-indicator">
-                                <span class="indicator-dot"></span>
-                                <span>Synced with Firebase</span>
-                            </div>
-                        </button>
-                        
                         <button class="menu-card" data-section="feedback">
                             <div class="menu-card__icon">💭</div>
                             <h3>Feedback</h3>
                             <p>Share your thoughts about the game</p>
+                        </button>
+                        
+                        <button class="menu-card" data-section="leaderboard">
+                            <div class="menu-card__icon">🏆</div>
+                            <h3>Leaderboard</h3>
+                            <p>View top players and statistics</p>
                         </button>
                     </div>
                 </section>
@@ -146,10 +66,9 @@
                                     <input type="radio" name="gameMode" value="local" checked>
                                     <span>Local (vs Computer)</span>
                                 </label>
-                                <label class="radio-label" id="online-mode-option">
-                                    <input type="radio" name="gameMode" value="online" disabled>
+                                <label class="radio-label">
+                                    <input type="radio" name="gameMode" value="online">
                                     <span>Online (vs Player)</span>
-                                    <small class="mode-status">Requires Firebase setup</small>
                                 </label>
                             </div>
                         </div>
@@ -180,47 +99,22 @@
                         </div>
 
                         <div id="room-code-display" class="room-code hidden">
-                            <div class="room-header">
-                                <h3>🎮 Room Created</h3>
-                                <div class="room-status" id="room-status">
-                                    <span class="status-indicator">
-                                        <span class="status-dot waiting"></span>
-                                        <span>Waiting for player...</span>
-                                    </span>
-                                </div>
-                            </div>
+                            <h3>Room Code</h3>
                             <div class="code-display">
                                 <span id="room-code-text"></span>
-                                <button id="copy-code" class="btn btn--secondary btn--sm">Copy Code</button>
+                                <button id="copy-code" class="btn btn--secondary btn--sm">Copy</button>
                             </div>
                             <p class="help-text">Share this code with another player to join your game</p>
-                            
-                            <div class="room-info" id="room-info">
-                                <div class="player-list">
-                                    <div class="player-slot">
-                                        <span class="player-icon">🎮</span>
-                                        <span id="host-name">You (Host)</span>
-                                        <span class="player-status ready">Ready</span>
-                                    </div>
-                                    <div class="player-slot" id="guest-slot">
-                                        <span class="player-icon">👤</span>
-                                        <span>Waiting for player...</span>
-                                        <span class="player-status waiting">Waiting</span>
-                                    </div>
-                                </div>
-                            </div>
+                            <div id="room-status" class="status--info status">Waiting for player to join...</div>
                         </div>
 
-                        <button id="start-game" class="btn btn--primary btn--full-width">
-                            <span class="btn-text">Start Game</span>
-                            <span class="btn-loading hidden">Creating room...</span>
-                        </button>
+                        <button id="start-game" class="btn btn--primary btn--full-width">Start Game</button>
                     </div>
                 </section>
 
                 <!-- Join Game Section -->
                 <section id="join-game" class="section">
-                    <h2>Join Online Game</h2>
+                    <h2>Join Game</h2>
                     
                     <div class="join-form">
                         <div class="form-group">
@@ -233,18 +127,9 @@
                             <input type="text" id="room-code-input" class="form-control" placeholder="Enter 6-digit room code" maxlength="6">
                         </div>
                         
-                        <button id="join-game-btn" class="btn btn--primary btn--full-width">
-                            <span class="btn-text">Join Game</span>
-                            <span class="btn-loading hidden">Joining room...</span>
-                        </button>
+                        <button id="join-game-btn" class="btn btn--primary btn--full-width">Join Game</button>
                         
                         <div id="join-status" class="status-message hidden"></div>
-                    </div>
-
-                    <div id="firebase-offline-notice" class="offline-notice hidden">
-                        <h3>🔌 Firebase Not Available</h3>
-                        <p>Online multiplayer requires Firebase setup. You can still play locally against the computer.</p>
-                        <button class="btn btn--outline" data-section="create-game">Play vs Computer</button>
                     </div>
                 </section>
 
@@ -266,14 +151,10 @@
                         <div class="game-progress">
                             <span id="game-progress-text">Round 1</span>
                         </div>
+                    </div>
 
-                        <!-- Online Game Status -->
-                        <div class="online-game-status" id="online-game-status">
-                            <div class="connection-indicator">
-                                <span class="status-dot connected" id="game-connection-dot"></span>
-                                <span id="game-connection-text">Connected</span>
-                            </div>
-                        </div>
+                    <div class="connection-status" id="connection-status">
+                        <span class="status--info status">Connected</span>
                     </div>
 
                     <div class="game-area">
@@ -281,7 +162,6 @@
                             <div class="choice-result">
                                 <div class="choice-icon" id="player1-choice">?</div>
                                 <div class="choice-name" id="player1-choice-name">Make your choice</div>
-                                <div class="choice-status" id="player1-status"></div>
                             </div>
                             
                             <div class="vs-indicator">VS</div>
@@ -289,7 +169,6 @@
                             <div class="choice-result">
                                 <div class="choice-icon" id="player2-choice">?</div>
                                 <div class="choice-name" id="player2-choice-name">Waiting...</div>
-                                <div class="choice-status" id="player2-status"></div>
                             </div>
                         </div>
 
@@ -298,7 +177,7 @@
                             <p id="result-explanation"></p>
                         </div>
 
-                        <div class="choice-buttons" id="choice-buttons">
+                        <div class="choice-buttons">
                             <button class="choice-btn" data-choice="rock">
                                 <span class="choice-emoji">🗿</span>
                                 <span class="choice-label">Rock</span>
@@ -319,11 +198,6 @@
                                 <span class="choice-emoji">🖖</span>
                                 <span class="choice-label">Spock</span>
                             </button>
-                        </div>
-
-                        <div class="waiting-message" id="waiting-message">
-                            <div class="waiting-spinner"></div>
-                            <p id="waiting-text">Waiting for opponent's choice...</p>
                         </div>
 
                         <div class="game-controls">
@@ -398,17 +272,6 @@
                                 <li>🦎 Lizard poisons 🖖 Spock and eats 📄 Paper</li>
                                 <li>🖖 Spock smashes ✂️ Scissors and vaporizes 🗿 Rock</li>
                             </ul>
-                            
-                            <div class="online-features">
-                                <h4>🌐 Online Multiplayer Features</h4>
-                                <ul>
-                                    <li><strong>Real-time gameplay:</strong> Instant updates when both players make choices</li>
-                                    <li><strong>Room system:</strong> Create private rooms with shareable codes</li>
-                                    <li><strong>Global leaderboard:</strong> Track your performance against players worldwide</li>
-                                    <li><strong>Connection status:</strong> See when players join, leave, or disconnect</li>
-                                    <li><strong>Game history:</strong> All completed games are saved to Firebase</li>
-                                </ul>
-                            </div>
                         </div>
                     </div>
                 </section>
@@ -461,15 +324,7 @@
 
                 <!-- Leaderboard Section -->
                 <section id="leaderboard" class="section">
-                    <div class="leaderboard-header">
-                        <h2>🏆 Global Leaderboard</h2>
-                        <div class="leaderboard-sync-status" id="leaderboard-sync-status">
-                            <div class="sync-indicator">
-                                <span class="sync-dot" id="sync-dot"></span>
-                                <span id="sync-text">Syncing with Firebase...</span>
-                            </div>
-                        </div>
-                    </div>
+                    <h2>Leaderboard</h2>
                     
                     <div class="leaderboard-controls">
                         <div class="form-group">
@@ -481,11 +336,6 @@
                                 <option value="winStreak">Current Win Streak</option>
                             </select>
                         </div>
-
-                        <button id="refresh-leaderboard" class="btn btn--outline btn--sm">
-                            <span class="refresh-icon">🔄</span>
-                            Refresh
-                        </button>
                     </div>
                     
                     <div class="leaderboard-table">
@@ -497,8 +347,7 @@
                             <div class="table-cell">Streak</div>
                         </div>
                         <div id="leaderboard-body" class="table-body">
-                            <div class="loading-state" id="leaderboard-loading">
-                                <div class="loading-spinner"></div>
+                            <div class="empty-state">
                                 <p>Loading leaderboard...</p>
                             </div>
                         </div>
@@ -508,6 +357,9 @@
         </main>
     </div>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
