@@ -1,12 +1,12 @@
 // Firebase Configuration (Replace with your actual config)
 const firebaseConfig = {
-    apiKey: "AIzaSyDRA3-b-6aAVy8tYudcIl4pKmgrPN0i8yA",
-    authDomain: "rpsls-multiplayer-30daa.firebaseapp.com",
-    databaseURL: "https://rpsls-multiplayer-30daa-default-rtdb.firebaseio.com",
-    projectId: "rpsls-multiplayer-30daa",
-    storageBucket: "rpsls-multiplayer-30daa.firebasestorage.app",
-    messagingSenderId: "644787821256",
-    appId: "1:644787821256:web:4fc9b34728e19fbf2863fd"
+    apiKey: "AIzaSyB2wW6aQS6eausCrBikACIKmsD8gn4E0g4",
+    authDomain: "rpsls-4e6db.firebaseapp.com",
+    databaseURL: "https://rpsls-4e6db-default-rtdb.firebaseio.com",
+    projectId: "rpsls-4e6db",
+    storageBucket: "rpsls-4e6db.firebasestorage.app",
+    messagingSenderId: "665715994571",
+    appId: "1:665715994571:web:52d971ca41f55e052f104e"
   };
 
 // Game Data
@@ -96,7 +96,7 @@ class FirebaseManager {
 
   async testConnection() {
     try {
-      const testRef = database.ref('.info/connected');
+      const testRef = database.ref('info/connected');
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error('Connection timeout'));
@@ -124,7 +124,7 @@ class FirebaseManager {
     gameHistoryRef = database.ref('gameHistory');
     
     // Listen for connection status changes
-    database.ref('.info/connected').on('value', (snapshot) => {
+    database.ref('info/connected').on('value', (snapshot) => {
       if (snapshot.val() === true) {
         this.updateConnectionStatus('connected', 'Connected to Firebase');
       } else {
